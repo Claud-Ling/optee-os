@@ -35,6 +35,13 @@
 #include <kernel/thread_defs.h>
 #include "thread_private.h"
 
+	/*
+	 * The following platform functions are weakly defined. They provide
+	 * dummy implementations that will be overridden by a platform.
+	 */
+	.weak plat_update_rpc_state
+	.weak plat_update_preemption_state
+
 	.macro get_thread_ctx core_local, res, tmp0, tmp1
 		ldr	w\tmp0, [\core_local, \
 				#THREAD_CORE_LOCAL_CURR_THREAD]
@@ -231,6 +238,11 @@ FUNC thread_rpc , :
 	ldr	x20, [sp]	/* Get pointer to rv[] */
 	mov	sp, x0		/* Switch to tmp stack */
 
+	/* plat update states */
+	mov	x21, x1
+	bl	plat_update_rpc_state
+	mov	x1, x21
+
 	adr	x2, .thread_rpc_return
 	mov	w0, #THREAD_FLAGS_COPY_ARGS_ON_RETURN
 	bl	thread_state_suspend
@@ -328,6 +340,58 @@ FUNC thread_unwind_user_mode , :
 END_FUNC thread_unwind_user_mode
 
 	/*
+	 * This macro is used to add GICv3 support based on present implementation
+	 * Notes
+	 * In GICv1/v2 interrupts signals:
+	 * +------------------------+------------------+-------------------+
+	 * |Current Exception level |Grp0 Interrupts(S)|Grp1 Interrupts(NS)|
+	 * |------------------------+------------------+-------------------+
+	 * | Any                    |    FIQ or IRQ    |        IRQ        |
+	 * |------------------------+------------------+-------------------+
+	 * By convention, Grp0 interrupts shall use FIQ.
+	 *
+	 * In GICv3:
+	 * Interrupts signals for two Security states when EL3 is using AArch64
+	 * +------------------------+------------------+-------------------+
+	 * |Current Exception level | Grp0 Interrupts  | Grp1 Interrupts   |
+	 * |                        |                  |--------+----------+
+	 * |                        |                  | Secure |Non-secure|
+	 * |------------------------+------------------+--------+----------+
+	 * | Secure EL1 or EL0      |       FIQ        |   IRQ  |    FIQ   |
+	 * |------------------------+------------------+--------+----------+
+	 * | Non-secure EL1 or EL0  |       FIQ        |   FIQ  |    IRQ   |
+	 * |------------------------+------------------+--------+----------+
+	 * | Non-secure EL2         |       FIQ        |   FIQ  |    IRQ   |
+	 * |------------------------+------------------+--------+----------+
+	 * | Secure EL3             |       FIQ        |   FIQ  |    FIQ   |
+	 * |------------------------+------------------+--------+----------+
+	 *
+	 * By convention:
+	 *  # Group0 interrupts are expected to be handled at the highest implementated
+	 *    Exception level, i.e. EL3;
+	 *  # Secure Group1 interrupts are expected to be handled at Secure EL1;
+	 *  # Non-secure Group1 interrupts are expected to be handled at EL2 or Non-secure EL1
+	 *
+	 * So here we just handle G1S interrupts provided ATF should handle G0S well.
+	 *
+	 */
+	.macro do_fiq
+#ifdef CFG_GIC_V3
+		b	elx_irq
+#else
+		b	elx_fiq
+#endif
+	.endm
+
+	.macro do_irq
+#ifdef CFG_GIC_V3
+		b	elx_fiq
+#else
+		b	elx_irq
+#endif
+	.endm
+
+	/*
 	 * This macro verifies that the a given vector doesn't exceed the
 	 * architectural limit of 32 instructions. This is meant to be placed
 	 * immedately after the last instruction in the vector. It takes the
@@ -355,13 +419,13 @@ sync_el1_sp0:
 	.align	7
 irq_el1_sp0:
 	store_xregs sp, THREAD_CORE_LOCAL_X0, 0, 3
-	b	elx_irq
+	do_irq
 	check_vector_size irq_el1_sp0
 
 	.align	7
 fiq_el1_sp0:
 	store_xregs sp, THREAD_CORE_LOCAL_X0, 0, 3
-	b	elx_fiq
+	do_fiq
 	check_vector_size fiq_el1_sp0
 
 	.align	7
@@ -411,13 +475,13 @@ el0_sync_a64:
 	.align	7
 el0_irq_a64:
 	store_xregs sp, THREAD_CORE_LOCAL_X0, 0, 3
-	b	elx_irq
+	do_irq
 	check_vector_size el0_irq_a64
 
 	.align	7
 el0_fiq_a64:
 	store_xregs sp, THREAD_CORE_LOCAL_X0, 0, 3
-	b	elx_fiq
+	do_fiq
 	check_vector_size el0_fiq_a64
 
 	.align	7
@@ -443,13 +507,13 @@ el0_sync_a32:
 	.align	7
 el0_irq_a32:
 	store_xregs sp, THREAD_CORE_LOCAL_X0, 0, 3
-	b	elx_irq
+	do_irq
 	check_vector_size el0_irq_a32
 
 	.align	7
 el0_fiq_a32:
 	store_xregs sp, THREAD_CORE_LOCAL_X0, 0, 3
-	b	elx_fiq
+	do_fiq
 	check_vector_size el0_fiq_a32
 
 	.align	7
@@ -491,7 +555,7 @@ LOCAL_FUNC el0_svc , :
 	 * left in sp_el1. Note that the SVC handler is excepted to
 	 * re-enable IRQs by itself.
 	 */
-	msr	daifclr, #(DAIFBIT_FIQ | DAIFBIT_ABT | DAIFBIT_DBG)
+	msr	daifclr, #(DAIFBIT_ITR_S | DAIFBIT_ABT | DAIFBIT_DBG)
 
 	/* Call the handler */
 	bl	tee_svc_handler
@@ -727,6 +791,9 @@ LOCAL_FUNC elx_irq , :
 	str	w0, [sp, #THREAD_CORE_LOCAL_FLAGS]
 	msr	spsel, #0
 
+	/* update platform states */
+	bl	plat_update_preemption_state
+
 	/*
 	 * Note that we're exiting with SP_EL0 selected since the entry
 	 * functions expects to have SP_EL0 selected with the tmp stack
@@ -814,3 +881,17 @@ LOCAL_FUNC elx_fiq , :
 	/* Return from exception */
 	eret
 END_FUNC elx_fiq
+
+/*
+ * void plat_update_rpc_state(void);
+ */
+FUNC plat_update_rpc_state , :
+	ret
+END_FUNC plat_update_rpc_state
+
+/*
+ * void plat_update_preemption_state(void);
+ */
+FUNC plat_update_preemption_state , :
+	ret
+END_FUNC plat_update_preemption_state

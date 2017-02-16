@@ -51,6 +51,11 @@ static inline void write32(uint32_t val, vaddr_t addr)
 	*(volatile uint32_t *)addr = val;
 }
 
+static inline void write64(uint64_t val, vaddr_t addr)
+{
+	*(volatile uint64_t *)addr = val;
+}
+
 static inline uint8_t read8(vaddr_t addr)
 {
 	return *(volatile uint8_t *)addr;
@@ -64,6 +69,11 @@ static inline uint16_t read16(vaddr_t addr)
 static inline uint32_t read32(vaddr_t addr)
 {
 	return *(volatile uint32_t *)addr;
+}
+
+static inline uint64_t read64(vaddr_t addr)
+{
+	return *(volatile uint64_t *)addr;
 }
 
 static inline void io_mask8(vaddr_t addr, uint8_t val, uint8_t mask)
@@ -81,4 +91,8 @@ static inline void io_mask32(vaddr_t addr, uint32_t val, uint32_t mask)
 	write32((read32(addr) & ~mask) | (val & mask), addr);
 }
 
+static inline void io_mask64(vaddr_t addr, uint64_t val, uint64_t mask)
+{
+	write64((read64(addr) & ~mask) | (val & mask), addr);
+}
 #endif /*IO_H*/

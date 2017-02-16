@@ -86,6 +86,26 @@
 #else
 #define STACK_ABT_SIZE		1024
 #endif
+
+/*
+ * this is to add support for GICv3 based on present implementation
+ */
+#ifdef CFG_GIC_V3
+/*DAIF and thread exception flags helpers for GICv3 onward*/
+#define DAIF_TO_THREAD(daif)				\
+	(((daif) >> DAIF_F_SHIFT) & (THREAD_EXCP_ALL & ~(THREAD_EXCP_IRQ & THREAD_EXCP_FIQ))) |	\
+	(((daif) & DAIFBIT_FIQ) ? THREAD_EXCP_IRQ : 0) |	\
+	(((daif) & DAIFBIT_IRQ) ? THREAD_EXCP_FIQ : 0)
+#define THREAD_TO_DAIF(excp)	\
+	(((excp) & (THREAD_EXCP_ALL & ~(THREAD_EXCP_IRQ & THREAD_EXCP_FIQ))) << DAIF_F_SHIFT) |	\
+	(((excp) & THREAD_EXCP_IRQ) ? DAIFBIT_FIQ : 0) |	\
+	(((excp) & THREAD_EXCP_FIQ) ? DAIFBIT_IRQ : 0)
+#else
+/*DAIF and thread exception flags helpers for GICv2 backward*/
+#define DAIF_TO_THREAD(daif)	(((daif) >> DAIF_F_SHIFT) & THREAD_EXCP_ALL)
+#define THREAD_TO_DAIF(excp)	(((excp) & THREAD_EXCP_ALL) << DAIF_F_SHIFT)
+#endif
+
 #endif /*ARM64*/
 
 struct thread_ctx threads[CFG_NUM_THREADS];
@@ -147,6 +167,14 @@ thread_pm_handler_t thread_cpu_resume_handler_ptr;
 thread_pm_handler_t thread_system_off_handler_ptr;
 thread_pm_handler_t thread_system_reset_handler_ptr;
 
+/*
+ * The following platform functions are weakly defined. They provide
+ * dummy implementations that will be overridden by a platform.
+ */
+#pragma weak plat_update_std_smc_state
+#ifndef HAVE_PLAT_STATES
+void plat_update_std_smc_state(uint32_t fid);
+#endif
 
 static unsigned int thread_global_lock = SPINLOCK_UNLOCK;
 static bool thread_prealloc_rpc_cache;
@@ -248,7 +276,7 @@ uint32_t thread_get_exceptions(void)
 {
 	uint32_t daif = read_daif();
 
-	return (daif >> DAIF_F_SHIFT) & THREAD_EXCP_ALL;
+	return DAIF_TO_THREAD(daif);
 }
 
 void thread_set_exceptions(uint32_t exceptions)
@@ -260,7 +288,7 @@ void thread_set_exceptions(uint32_t exceptions)
 		assert_have_no_spinlock();
 
 	daif &= ~(THREAD_EXCP_ALL << DAIF_F_SHIFT);
-	daif |= ((exceptions & THREAD_EXCP_ALL) << DAIF_F_SHIFT);
+	daif |= THREAD_TO_DAIF(exceptions);
 	write_daif(daif);
 }
 #endif /*ARM64*/
@@ -370,11 +398,11 @@ static void init_regs(struct thread_ctx *thread,
 	thread->regs.pc = (uint64_t)thread_std_smc_entry;
 
 	/*
-	 * Stdcalls starts in SVC mode with masked IRQ, masked Asynchronous
-	 * abort and unmasked FIQ.
+	 * Stdcalls starts in SVC mode with masked IRQ (itr_ns), masked Asynchronous
+	 * abort and unmasked FIQ (itr_s).
 	  */
 	thread->regs.cpsr = SPSR_64(SPSR_64_MODE_EL1, SPSR_64_MODE_SP_EL0,
-				    DAIFBIT_IRQ | DAIFBIT_ABT);
+				    DAIFBIT_ITR_NS | DAIFBIT_ABT);
 	/* Reinitialize stack pointer */
 	thread->regs.sp = thread->stack_va_end;
 
@@ -551,6 +579,7 @@ void thread_handle_fast_smc(struct thread_smc_args *args)
 void thread_handle_std_smc(struct thread_smc_args *args)
 {
 	thread_check_canaries();
+	plat_update_std_smc_state(args->a0);
 
 	if (args->a0 == OPTEE_SMC_CALL_RETURN_FROM_RPC)
 		thread_resume_from_rpc(args);
@@ -1346,4 +1375,9 @@ void thread_rpc_alloc_payload(size_t size, paddr_t *payload, uint64_t *cookie)
 void thread_rpc_free_payload(uint64_t cookie)
 {
 	thread_rpc_free(OPTEE_MSG_RPC_SHM_TYPE_APPL, cookie);
+}
+
+/* dummy implementation */
+void plat_update_std_smc_state(uint32_t fid __unused)
+{
 }

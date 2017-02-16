@@ -29,6 +29,17 @@
 #ifndef THREAD_PRIVATE_H
 #define THREAD_PRIVATE_H
 
+/*
+ * this is to add support for GICv3 based on present implementation
+ */
+#ifdef CFG_GIC_V3
+#define DAIFBIT_ITR_NS		DAIFBIT_FIQ
+#define DAIFBIT_ITR_S		DAIFBIT_IRQ
+#else
+#define DAIFBIT_ITR_NS		DAIFBIT_IRQ
+#define DAIFBIT_ITR_S		DAIFBIT_FIQ
+#endif
+
 #ifndef ASM
 
 #include <mm/core_mmu.h>
