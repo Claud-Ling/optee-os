@@ -792,7 +792,9 @@ LOCAL_FUNC elx_irq , :
 	msr	spsel, #0
 
 	/* update platform states */
+	mov	w19, w4
 	bl	plat_update_preemption_state
+	mov	w4, w19
 
 	/*
 	 * Note that we're exiting with SP_EL0 selected since the entry

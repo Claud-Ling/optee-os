@@ -93,13 +93,13 @@
 #ifdef CFG_GIC_V3
 /*DAIF and thread exception flags helpers for GICv3 onward*/
 #define DAIF_TO_THREAD(daif)				\
-	(((daif) >> DAIF_F_SHIFT) & (THREAD_EXCP_ALL & ~(THREAD_EXCP_IRQ & THREAD_EXCP_FIQ))) |	\
-	(((daif) & DAIFBIT_FIQ) ? THREAD_EXCP_IRQ : 0) |	\
-	(((daif) & DAIFBIT_IRQ) ? THREAD_EXCP_FIQ : 0)
+	((((daif) >> DAIF_F_SHIFT) & (THREAD_EXCP_ALL & ~(THREAD_EXCP_IRQ | THREAD_EXCP_FIQ))) |	\
+	(((daif) & DAIF_F) ? THREAD_EXCP_IRQ : 0) |	\
+	(((daif) & DAIF_I) ? THREAD_EXCP_FIQ : 0))
 #define THREAD_TO_DAIF(excp)	\
-	(((excp) & (THREAD_EXCP_ALL & ~(THREAD_EXCP_IRQ & THREAD_EXCP_FIQ))) << DAIF_F_SHIFT) |	\
-	(((excp) & THREAD_EXCP_IRQ) ? DAIFBIT_FIQ : 0) |	\
-	(((excp) & THREAD_EXCP_FIQ) ? DAIFBIT_IRQ : 0)
+	((((excp) & (THREAD_EXCP_ALL & ~(THREAD_EXCP_IRQ | THREAD_EXCP_FIQ))) << DAIF_F_SHIFT) |	\
+	(((excp) & THREAD_EXCP_IRQ) ? DAIF_F : 0) |	\
+	(((excp) & THREAD_EXCP_FIQ) ? DAIF_I : 0))
 #else
 /*DAIF and thread exception flags helpers for GICv2 backward*/
 #define DAIF_TO_THREAD(daif)	(((daif) >> DAIF_F_SHIFT) & THREAD_EXCP_ALL)
