@@ -55,11 +55,36 @@
 #define TEE_MMU_UMAP_STACK_IDX	0
 #define TEE_MMU_UMAP_CODE_IDX	1
 #define TEE_MMU_UMAP_NUM_CODE_SEGMENTS	3
+#ifdef CFG_MMAP_API
+#define TEE_MMU_UMAP_NUM_MMAP_SEGMENTS	CFG_TEE_NUM_UMAPS
+#else
+#define TEE_MMU_UMAP_NUM_MMAP_SEGMENTS	0
+#endif
 
-#define TEE_MMU_UMAP_PARAM_IDX		(TEE_MMU_UMAP_CODE_IDX + \
+#define TEE_MMU_UMAP_MMAP_IDX		(TEE_MMU_UMAP_CODE_IDX + \
 					 TEE_MMU_UMAP_NUM_CODE_SEGMENTS)
+#define TEE_MMU_UMAP_PARAM_IDX		(TEE_MMU_UMAP_MMAP_IDX + \
+					 TEE_MMU_UMAP_NUM_MMAP_SEGMENTS)
 #define TEE_MMU_UMAP_MAX_ENTRIES	(TEE_MMU_UMAP_PARAM_IDX + \
 				TEE_NUM_PARAMS)
+/*
+ * <tony_he@sigmadesigns.com>
+ * hack tee mmu to support arbitrary mmap for TAs, i.e. DMA buffer.
+ * the number of user map regions is specified by CFG_TEE_NUM_UMAPS.
+
+ +------------------+ -> ta_vmem_end
+ |       N/A        |
+ +------------------+
+ |      params      |
+ +------------------+
+ |       maps       |
+ +------------------+
+ |       code       |
+ +------------------+
+ |      stack       |
+ +------------------+ -> ta_vmem_start
+
+ */
 
 #define TEE_MMU_UDATA_ATTR		(TEE_MATTR_VALID_BLOCK | \
 					 TEE_MATTR_PRW | TEE_MATTR_URW | \
@@ -634,8 +659,45 @@ void tee_mmu_set_ctx(struct tee_ta_ctx *ctx)
 	if (ctx && is_user_ta_ctx(ctx)) {
 		struct core_mmu_user_map map;
 		struct user_ta_ctx *utc = to_user_ta_ctx(ctx);
+#ifdef CFG_MMAP_API
+		/*
+		 * The patch here is to cheat core mmu code, for the MMAP patches might disorder
+		 * mmu table but core_mmu_create_user_map call always requires entries should be in va
+		 * ascending order.
+		 * On the other hand, maps and params entries shall be placed in fixed position elsewhere.
+		 *
+		 * The patch here is divided into two parts:
+		 * 1. backup and reorder portion of mmu table in va ascending order before create user map;
+		 * 2. recover mmu table afterwards;
+		 */
+		size_t n, k;
+		struct tee_mmap_region tmp, (*rgns)[TEE_MMU_UMAP_NUM_MMAP_SEGMENTS + TEE_NUM_PARAMS];
 
+		rgns = malloc(sizeof(*rgns));
+		assert(rgns != NULL);
+		/* backup maps & params regions */
+		memcpy (rgns, utc->mmu->table + TEE_MMU_UMAP_MMAP_IDX, sizeof(*rgns));
+		/* reorder maps & params regions, in va ascending order */
+		for (n = TEE_MMU_UMAP_MMAP_IDX; n < TEE_MMU_UMAP_MAX_ENTRIES; n++) {
+			if (!utc->mmu->table[n].size)
+				continue;
+			for (k = n + 1; k < TEE_MMU_UMAP_MAX_ENTRIES; k++) {
+				if (!utc->mmu->table[k].size)
+					continue;
+				if (utc->mmu->table[k].va < utc->mmu->table[n].va) {
+					tmp = utc->mmu->table[n];
+					utc->mmu->table[n] = utc->mmu->table[k];
+					utc->mmu->table[k] = tmp;
+				}
+			}
+		}
+#endif
 		core_mmu_create_user_map(utc, &map);
+#ifdef CFG_MMAP_API
+		/* recover maps & params regions */
+		memcpy (utc->mmu->table + TEE_MMU_UMAP_MMAP_IDX, rgns, sizeof(*rgns));
+		free(rgns);
+#endif
 		core_mmu_set_user_map(&map);
 		tee_pager_assign_uta_tables(utc);
 	}
@@ -723,3 +785,209 @@ uint32_t tee_mmu_user_get_cache_attr(struct user_ta_ctx *utc, void *va)
 
 	return (attr >> TEE_MATTR_CACHE_SHIFT) & TEE_MATTR_CACHE_MASK;
 }
+
+#ifdef CFG_MMAP_API
+static TEE_Result tee_mmu_umap_set_mmap_va(struct tee_mmu_info *mmu, struct tee_mmap_region* entry)
+{
+	const size_t granule = CORE_MMU_USER_PARAM_SIZE;
+	size_t n, k, i;
+	size_t index[TEE_MMU_UMAP_NUM_MMAP_SEGMENTS + TEE_NUM_PARAMS];
+	vaddr_t va, vend, va_range_base;
+	size_t va_range_size;
+
+	/* create index array for MMAP and PARAM regions, in va ascending order */
+	memset(index, 0, sizeof(index));
+	for (i = 0, n = TEE_MMU_UMAP_MMAP_IDX; n < TEE_MMU_UMAP_MAX_ENTRIES; n++) {
+		if (!mmu->table[n].va)
+			continue;
+		index[i++] = n;
+	}
+	for (i = 0; i < ARRAY_SIZE(index) && index[i]; i++) {
+		for (k = i + 1; k < ARRAY_SIZE(index) && index[k]; k++) {
+			if (mmu->table[index[k]].va < mmu->table[index[i]].va) {
+				n = index[i];
+				index[i] = index[k];
+				index[k] = n;
+			}
+		}
+	}
+
+	core_mmu_get_user_va_range(&va_range_base, &va_range_size);
+	assert(va_range_base == mmu->ta_private_vmem_start);
+
+	/* Find last table entry used to map code and data */
+	n = TEE_MMU_UMAP_MMAP_IDX - 1;
+	while (n && !mmu->table[n].size)
+		n--;
+	va = mmu->table[n].va + mmu->table[n].size;
+	assert(va);
+
+	/* fixup va range, searching from the lowest */
+	if (entry->attr & TEE_MATTR_SECURE)
+		va = ROUNDUP(va, granule);
+	else
+		va = ROUNDUP(va, CORE_MMU_PGDIR_SIZE);
+	for (k = 0; k < i; k++) {
+		n = index[k];
+		if (((entry->attr & TEE_MATTR_SECURE) ==
+		     (mmu->table[n].attr & TEE_MATTR_SECURE)) ||
+		     (ROUNDDOWN(mmu->table[n].va, CORE_MMU_PGDIR_SIZE) !=
+		      ROUNDDOWN(mmu->table[n].va - granule, CORE_MMU_PGDIR_SIZE))) {
+			vend = mmu->table[n].va - granule;
+		} else {
+			vend = ROUNDDOWN(mmu->table[n].va, CORE_MMU_PGDIR_SIZE);
+		}
+
+		if (vend > va && (vend - va) >= entry->size) {
+			break;
+		} else {
+			va = mmu->table[n].va + mmu->table[n].size;
+			/* Put some empty space between each area */
+			va += granule;
+			if ((entry->attr & TEE_MATTR_SECURE) ==
+			    (mmu->table[n].attr & TEE_MATTR_SECURE))
+				va = ROUNDUP(va, granule);
+			else
+				va = ROUNDUP(va, CORE_MMU_PGDIR_SIZE);
+		}
+	}
+
+	/* Set va */
+	entry->va = va;
+	va += entry->size;
+	/* Put some empty space between each area */
+	va += granule;
+	if ((va - va_range_base) >= va_range_size)
+		return TEE_ERROR_EXCESS_DATA;
+
+	for (n = 0, k = 1; k < TEE_MMU_UMAP_MAX_ENTRIES; k++) {
+		if (mmu->table[k].size && mmu->table[k].va > mmu->table[n].va)
+			n = k;
+	}
+	return check_pgt_avail(mmu->ta_private_vmem_start,
+			       mmu->table[n].va +
+			       mmu->table[n].size);
+}
+
+static void tee_dump_mmu_table(struct tee_mmu_info *mmu __maybe_unused)
+{
+	size_t n;
+	FMSG("id: type rgn_size pa va size attr");
+	for (n = 0; n < TEE_MMU_UMAP_MAX_ENTRIES; n++) {
+		FMSG("%02zd: %d %d %08lx %08lx %08zx %08x", n, mmu->table[n].type,
+			mmu->table[n].region_size, mmu->table[n].pa,
+			mmu->table[n].va, mmu->table[n].size,
+			mmu->table[n].attr);
+	}
+}
+
+/*
+ * add one user mmap area
+ * pa must be aligned with CORE_MMU_USER_PARAM_SIZE
+ */
+TEE_Result tee_mmu_umap_mmap(struct user_ta_ctx *utc, paddr_t pa,
+			size_t size, uint32_t attr, vaddr_t *out)
+{
+	struct tee_mmu_info *mmu = utc->mmu;
+	struct tee_mmap_region rgn;
+	size_t n, k;
+	TEE_Result res;
+
+	/* Check if pa fulfills alignment requirement */
+	if (pa & CORE_MMU_USER_PARAM_MASK)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	/* Check if size is non-zero */
+	if (!size)
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	/* Check that we can map memory using this attribute */
+	if (!core_mmu_mattr_is_ok(attr))
+		return TEE_ERROR_BAD_PARAMETERS;
+
+	/* Find empty entry */
+	for (n = TEE_MMU_UMAP_MMAP_IDX; n < TEE_MMU_UMAP_PARAM_IDX; n++)
+		if (!mmu->table[n].size)
+			break;
+
+	if (n == TEE_MMU_UMAP_PARAM_IDX) {
+		/* No entries left "can't happen" */
+		return TEE_ERROR_EXCESS_DATA;
+	}
+
+	tee_mmu_umap_set_pa(mmu->table + n, CORE_MMU_USER_PARAM_SIZE,
+			    pa, size, attr);
+
+	/* set va */
+	mmu->table[n].va = 0;
+	res = tee_mmu_umap_set_mmap_va(mmu, mmu->table + n);
+	if (res != TEE_SUCCESS) {
+		/* house keeping */
+		memset(mmu->table + n, 0, sizeof(mmu->table[n]));
+		return res;
+	}
+	assert(out != NULL);
+	*out = mmu->table[n].va;
+
+	/*
+	 * reorder mmap entries:
+	 * 1. put all valid entries in bottom
+	 * 2. in va ascending order
+	 */
+	n = TEE_MMU_UMAP_MMAP_IDX;
+	for (k = TEE_MMU_UMAP_MMAP_IDX + 1; k < TEE_MMU_UMAP_PARAM_IDX; k++) {
+		if (mmu->table[k].size && (!mmu->table[n].size || mmu->table[k].va < mmu->table[n].va)) {
+			rgn = mmu->table[n];
+			mmu->table[n] = mmu->table[k];
+			mmu->table[k] = rgn;
+		}
+	}
+
+	/* debug */
+	tee_dump_mmu_table(mmu);
+
+	/*
+	 * update user map
+	 */
+	if (tee_mmu_get_ctx() == &utc->ctx) {
+		tee_mmu_set_ctx(&utc->ctx);
+	}
+	return TEE_SUCCESS;
+}
+
+/*
+ * delete one user mmap area
+ */
+TEE_Result tee_mmu_umap_munmap(struct user_ta_ctx *utc, vaddr_t va,
+			size_t size)
+{
+	struct tee_mmu_info *mmu = utc->mmu;
+	size_t n;
+
+	(void)size;
+	/* find entry by va */
+	for (n = TEE_MMU_UMAP_MMAP_IDX; n < TEE_MMU_UMAP_PARAM_IDX; n++) {
+		if (va == mmu->table[n].va)
+			break;
+	}
+
+	/* quit on none entry */
+	if (TEE_MMU_UMAP_PARAM_IDX == n)
+		return TEE_ERROR_ITEM_NOT_FOUND;
+
+	/* wipe */
+	memset(mmu->table + n, 0, sizeof(mmu->table[n]));
+
+	/* debug */
+	tee_dump_mmu_table(mmu);
+
+	/*
+	 * update user map
+	 */
+	if (tee_mmu_get_ctx() == &utc->ctx) {
+		tee_mmu_set_ctx(&utc->ctx);
+	}
+	return TEE_SUCCESS;
+}
+
+#endif /* CFG_MMAP_API */

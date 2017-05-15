@@ -13,6 +13,9 @@ $(call force,CFG_PM_STUBS,y)
 $(call force,CFG_SECURE_TIME_SOURCE_CNTPCT,y)
 $(call force,CFG_WITH_ARM_TRUSTED_FW,y)
 $(call force,CFG_CRYPTO_WITH_CE,n)
+$(call force,CFG_TEE_NUM_UMAPS,8)
+$(call force,CFG_MMAP_API,y)
+$(call force,CFG_CACHE_API,y)
 
 ta-targets = ta_arm32
 

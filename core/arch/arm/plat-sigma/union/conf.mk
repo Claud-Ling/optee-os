@@ -1,6 +1,6 @@
 # Number of cores
 $(call force,CFG_TEE_CORE_NB_CORE,2)
-CFG_NUM_THREADS ?= CFG_TEE_CORE_NB_CORE
+CFG_NUM_THREADS ?= 8
 
 # ARM GIC ARCH Version
 $(call force,CFG_GIC_V3,y)

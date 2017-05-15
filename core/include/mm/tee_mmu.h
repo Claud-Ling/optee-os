@@ -109,4 +109,18 @@ uint32_t tee_mmu_user_get_cache_attr(struct user_ta_ctx *utc, void *va);
 
 TEE_Result tee_mmu_register_shm(paddr_t pa, size_t len, uint32_t attr);
 
+#ifdef CFG_MMAP_API
+/*
+ * add one user mmap area
+ */
+TEE_Result tee_mmu_umap_mmap(struct user_ta_ctx *utc, paddr_t pa,
+			size_t size, uint32_t attr, vaddr_t *out);
+
+/*
+ * delete one user mmap area
+ */
+TEE_Result tee_mmu_umap_munmap(struct user_ta_ctx *utc, vaddr_t va,
+			size_t size);
+#endif /* CFG_MMAP_API */
+
 #endif
