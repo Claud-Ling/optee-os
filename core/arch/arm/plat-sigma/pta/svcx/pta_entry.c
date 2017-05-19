@@ -86,13 +86,17 @@ static TEE_Result invoke_command(void *pSessionContext __unused,
 		return svcx_map(nParamTypes, pParams);
 	case PTA_SVCX_CMD_MUNMAP:
 		return svcx_unmap(nParamTypes, pParams);
+	case PTA_SVCX_CMD_OTP_WRITE:
+		return svcx_otp_write(nParamTypes, pParams);
+	case PTA_SVCX_CMD_MEM_STATE:
+		return svcx_mem_state(nParamTypes, pParams);
 	default:
 		break;
 	}
 	return TEE_ERROR_BAD_PARAMETERS;
 }
 
-static_ta_register(.uuid = PTA_SVC_EXT_UUID, .name = TA_NAME,
+static_ta_register(.uuid = PTA_SVCX_UUID, .name = TA_NAME,
 		   .create_entry_point = create_ta,
 		   .destroy_entry_point = destroy_ta,
 		   .open_session_entry_point = open_session,

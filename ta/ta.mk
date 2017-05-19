@@ -40,6 +40,13 @@ libname = mpa
 libdir = lib/libmpa
 include mk/lib.mk
 
+# TEE internal API extensions
+ifeq ($(CFG_HAVE_LIBUTEEX),y)
+libname = uteex
+libdir = $(CFG_LIBUTEEX_DIR)
+include mk/lib.mk
+endif
+
 libname = utee
 libdir = lib/libutee
 include mk/lib.mk

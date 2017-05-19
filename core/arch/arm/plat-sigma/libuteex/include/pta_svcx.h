@@ -34,7 +34,7 @@
 
 /* This UUID is generated with uuidgen
    the ITU-T UUID generator at http://www.itu.int/ITU-T/asn1/uuid.html */
-#define PTA_SVC_EXT_UUID \
+#define PTA_SVCX_UUID \
 		{ 0x4AB65334, 0x5A59, 0x45D2,  \
 			{ 0xA9, 0x61, 0x1F, 0x2F, 0x0B, 0xED, 0x2B, 0xD6 } }
 
@@ -44,13 +44,14 @@
 #define PTA_SVCX_CMD_MMAP		2
 #define PTA_SVCX_CMD_MUNMAP		3
 #define PTA_SVCX_CMD_OTP_WRITE		4
+#define PTA_SVCX_CMD_MEM_STATE		5
 
-#ifndef __ASSEMBLY__
+#ifndef ASM
 
 /*
  * user map attributes constants
  */
-enum utee_umap_attr {
+enum tee_umap_attr {
 	TEE_MAP_ATTR_NONCACHE = 0,
 	TEE_MAP_ATTR_CACHED = (1 << 0),
 	TEE_MAP_ATTR_GLOBAL = (1 << 3),
@@ -69,11 +70,45 @@ enum utee_umap_attr {
 /*
  * user map protection constants
  */
-enum utee_umap_prot {
+enum tee_umap_prot {
 	TEE_MAP_PROT_READ = (1 << 0),
 	TEE_MAP_PROT_WRITE = (1 << 1),
 	TEE_MAP_PROT_EXEC = (1 << 2),
 };
 
-#endif /* !__ASSEMBLY__ */
+/**
+ * OTP KEY ID definition
+ */
+enum tee_otp_id {
+	TEE_OTP_KEY_0 = 0,	/* OTP KEY0 */
+	TEE_OTP_KEY_1,		/* OTP KEY1 */
+	TEE_OTP_KEY_2,		/* OTP KEY2 */
+	TEE_OTP_KEY_3,		/* OTP KEY3 */
+	TEE_OTP_KEY_4,		/* OTP KEY4 */
+	TEE_OTP_KEY_5,		/* OTP KEY5 */
+	TEE_OTP_KEY_RSA,	/* RSA PUB KEY */
+	TEE_OTP_KEY_NONE = -1,
+};
+
+/**
+ * OTP protection attribute definition
+ */
+enum tee_otp_prot {
+	TEE_OTP_PROT_NONE = 0,	/* protection off */
+	TEE_OTP_PROT_NRD,	/* non-readable */
+	TEE_OTP_PROT_NWR,	/* non-writable */
+	TEE_OTP_PROT_NRDNWR,	/* non-readable and non-writable */
+};
+
+/*
+ * memory access state
+ */
+enum tee_mem_state {
+	TEE_MEM_STATE_S_RW = 1,		/* secure r/w mem */
+	TEE_MEM_STATE_NS_RD = (1<<1),	/* non-secure readable mem */
+	TEE_MEM_STATE_NS_WR = (1<<2),	/* non-secure writable mem */
+	TEE_MEM_STATE_S_EXEC = (1<<3),	/* secure executable */
+	TEE_MEM_STATE_NS_EXEC = (1<<4),	/* non-secure executable */
+};
+#endif /* !ASM */
 #endif /* __PTA_SVC_EXT_H__ */

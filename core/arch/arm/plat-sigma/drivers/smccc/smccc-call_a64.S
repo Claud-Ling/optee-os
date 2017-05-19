@@ -24,62 +24,28 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *
+ * Brief:   This file implements arm_smccc_smc call for aarch64
  * Author:  Tony He <tony_he@sigmadesigns.com>
- * Date:    2017/05/16
+ * Date:    2017/05/13
  *
  */
 
-#include <types_ext.h>
-#include <tee_api_types.h>
-#include <tee_api_defines.h>
-#include <pta_svcx.h>
+#include <platform_config.h>
 
-#ifndef __SVCX_INTERNAL_H__
-#define __SVCX_INTERNAL_H__
-
-#ifndef ASM
-
-#define ASSERT_PARAM_TYPE(pt) \
-do { \
-	if ((pt) != param_types) \
-		return TEE_ERROR_BAD_PARAMETERS; \
-} while (0)
-
-TEE_Result svcx_not_supported(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS]);
-
-#ifdef CFG_MMAP_API
-/*
- * add one user map for calling TA
- */
-TEE_Result svcx_map(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS]);
+#include <asm.S>
+#include <arm.h>
+#include <plat-asm-defines.h>
 
 /*
- * deletes the mappings for the specified address range, and causes further references
- * to addresses within the range to generate invalid memory references
+ * void smccc_smc(unsigned long a0, unsigned long a1, unsigned long a2,
+ *		  unsigned long a3, unsigned long a4, unsigned long a5,
+ *		  unsigned long a6, unsigned long a7, struct smccc_res *res)
  */
-TEE_Result svcx_unmap(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS]);
-#else
-#define  svcx_map	svcx_not_supported
-#define  svcx_unmap	svcx_not_supported
-#endif
+FUNC smccc_smc , :
+	smc	#0
+	ldr	x4, [sp]
+	stp	x0, x1, [x4, #SMCCC_RES_A0]
+	stp	x2, x3, [x4, #SMCCC_RES_A2]
+	ret
+END_FUNC smccc_smc
 
-#ifdef CFG_OTP_API
-/*
- * program OTP, accessible only from ULI TA
- */
-TEE_Result svcx_otp_write(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS]);
-#else
-#define svcx_otp_write	svcx_not_supported
-#endif
-
-#ifdef CFG_MEMSTAT_API
-/*
- * query memory access state
- */
-TEE_Result svcx_mem_state(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS]);
-#else
-#define svcx_mem_state	svcx_not_supported
-#endif
-
-#endif /* !ASM */
-#endif /* __SVCX_INTERNAL_H__ */

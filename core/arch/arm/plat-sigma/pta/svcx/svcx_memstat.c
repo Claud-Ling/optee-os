@@ -25,61 +25,50 @@
  * POSSIBILITY OF SUCH DAMAGE.
  *
  * Author:  Tony He <tony_he@sigmadesigns.com>
- * Date:    2017/05/16
+ * Date:    2017/05/17
  *
  */
 
 #include <types_ext.h>
+#include <kernel/misc.h> /*reg_pair_to_64/reg_pair_from_64*/
+#include <kernel/tee_ta_manager.h>
 #include <tee_api_types.h>
 #include <tee_api_defines.h>
-#include <pta_svcx.h>
+#include <firmware.h>
+#include "svcx_internal.h"
 
-#ifndef __SVCX_INTERNAL_H__
-#define __SVCX_INTERNAL_H__
-
-#ifndef ASM
-
-#define ASSERT_PARAM_TYPE(pt) \
-do { \
-	if ((pt) != param_types) \
-		return TEE_ERROR_BAD_PARAMETERS; \
-} while (0)
-
-TEE_Result svcx_not_supported(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS]);
-
-#ifdef CFG_MMAP_API
-/*
- * add one user map for calling TA
- */
-TEE_Result svcx_map(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS]);
-
-/*
- * deletes the mappings for the specified address range, and causes further references
- * to addresses within the range to generate invalid memory references
- */
-TEE_Result svcx_unmap(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS]);
-#else
-#define  svcx_map	svcx_not_supported
-#define  svcx_unmap	svcx_not_supported
-#endif
-
-#ifdef CFG_OTP_API
-/*
- * program OTP, accessible only from ULI TA
- */
-TEE_Result svcx_otp_write(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS]);
-#else
-#define svcx_otp_write	svcx_not_supported
-#endif
-
-#ifdef CFG_MEMSTAT_API
 /*
  * query memory access state
  */
-TEE_Result svcx_mem_state(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS]);
-#else
-#define svcx_mem_state	svcx_not_supported
-#endif
+TEE_Result svcx_mem_state(uint32_t param_types, TEE_Param params[TEE_NUM_PARAMS])
+{
+	TEE_Result res;
+	TEE_Identity clnt;
+	paddr_t pa;
+	size_t len;
+	uint32_t state;
 
-#endif /* !ASM */
-#endif /* __SVCX_INTERNAL_H__ */
+	ASSERT_PARAM_TYPE(TEE_PARAM_TYPES
+			  (TEE_PARAM_TYPE_VALUE_INOUT,
+			   TEE_PARAM_TYPE_VALUE_INPUT,
+			   TEE_PARAM_TYPE_NONE,
+			   TEE_PARAM_TYPE_NONE));
+
+	res = tee_ta_get_client_id(&clnt);
+	if (res != TEE_SUCCESS)
+		return res;
+
+	/* check if called from TA */
+	if (clnt.login != TEE_LOGIN_TRUSTED_APP)
+		return TEE_ERROR_NOT_SUPPORTED;
+
+	/* extract params */
+	pa = (paddr_t)reg_pair_to_64(params[0].value.a, params[0].value.b);
+	len = reg_pair_to_64(params[1].value.a, params[1].value.b);
+
+	res = fw_get_mem_state(pa, len, &state);
+	if (TEE_SUCCESS == res) {
+		params[0].value.a = state;
+	}
+	return res;
+}

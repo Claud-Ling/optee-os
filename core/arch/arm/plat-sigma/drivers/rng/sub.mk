@@ -1,0 +1,1 @@
+srcs-y += rng.c

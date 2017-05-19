@@ -1,0 +1,58 @@
+/*
+ * Auto generated from plat/sigmadesigns/union/res/fuse_data_map.fd
+ * DO NOT EDIT!
+ *
+ * Must include stdint.h.
+ * The most important part of the file is the MACROs: FUSE_OFS_XX,
+ *
+ */
+
+#ifndef __FUSE_DATA_MAP_H__
+#define __FUSE_DATA_MAP_H__
+
+#define FUSE_OFS_FUSE_CTL_CFG	0x000
+#define FUSE_OFS_FC_0	0x004
+#define FUSE_OFS_FC_1	0x008
+#define FUSE_OFS_FC_2	0x00c
+#define FUSE_OFS_FC_3	0x010
+#define FUSE_OFS_CRYPTO_CFG_0	0x014
+#define FUSE_OFS_CRYPTO_CFG_1	0x018
+#define FUSE_OFS_CRYPTO_CFG_2	0x01c
+#define FUSE_OFS_TSP_CFG_0	0x020
+#define FUSE_OFS_TSP_CFG_1	0x024
+#define FUSE_OFS_RSA_KEY_GEN	0x028
+#define FUSE_OFS_KL_FINAL_KEY_ATT_CRYPTO_KV	0x02c
+#define FUSE_OFS_KL_FINAL_KEY_ATT_TSP_KT_0	0x030
+#define FUSE_OFS_KL_FINAL_KEY_ATT_TSP_KT_1	0x034
+#define FUSE_OFS_DIE_ID_0	0x038
+#define FUSE_OFS_GD_WORD_15	0x03c
+#define FUSE_OFS_GD_WORD_16	0x040
+#define FUSE_OFS_GD_WORD_17	0x044
+#define FUSE_OFS_GPFC_0	0x048
+#define FUSE_OFS_GPFC_1	0x04c
+#define FUSE_OFS_GD_WORD_20	0x050
+#define FUSE_OFS_DIE_CHAR_1	0x054
+#define FUSE_OFS_GD_WORD_22	0x058
+#define FUSE_OFS_GD_WORD_23	0x05c
+#define FUSE_OFS_TEMPLATE_REFERENCE	0x060
+#define FUSE_OFS_BOOT_ROM_CFG_0	0x064
+#define FUSE_OFS_BOOT_ROM_CFG_1	0x068
+#define FUSE_OFS_BOOT_ROM_CFG_2	0x06c
+#define FUSE_OFS_FUSE_SIG	0x080
+#define FUSE_OFS_OBF_DATA	0x090
+#define FUSE_OFS_CHIP_ID	0x0a0
+#define FUSE_OFS_JTAG_PWD	0x0b0
+#define FUSE_OFS_OTP_KEY_0	0x0c0
+#define FUSE_OFS_OTP_KEY_1	0x0d0
+#define FUSE_OFS_OTP_KEY_2	0x0e0
+#define FUSE_OFS_OTP_KEY_3	0x0f0
+#define FUSE_OFS_OTP_KEY_4	0x100
+#define FUSE_OFS_OTP_KEY_5	0x110
+#define FUSE_OFS_WATERMARK_PRIV_DATA	0x120
+#define FUSE_OFS_HDCP_KEYS	0x130
+#define FUSE_OFS_SPARE_ECC_0	0x250
+#define FUSE_OFS_SPARE_ECC_1	0x260
+#define FUSE_OFS_HMAC256_KEY	0x270
+#define FUSE_OFS_RSA_PUB_KEY	0x290
+
+#endif /* __FUSE_DATA_MAP_H__ */

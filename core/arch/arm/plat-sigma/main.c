@@ -28,7 +28,6 @@
  * Date:    2016/12/26
  *
  */
-#include <platform_config.h>
 
 #include <console.h>
 #include <drivers/ns16550.h>
